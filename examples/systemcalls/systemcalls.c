@@ -1,4 +1,10 @@
+#define _XOPEN_SOURCE
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,6 +22,12 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int ret;
+    ret = system(cmd);
+    if(!WIFEXITED(ret))
+        return false;
+    if(WEXITSTATUS(ret) != 0)
+        return false;
 
     return true;
 }
@@ -58,6 +70,28 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    int status;
+    pid_t pid;
+
+    pid = fork();
+    if(pid == -1)
+        return false;
+    else if(pid == 0) {
+        execv(command[0], command);
+        return false;
+    }
+
+    // If there is an error in calling waitpid()
+    if(waitpid(pid, &status, 0) == -1)
+        return false;
+    // If process exitted normally
+    else if(WIFEXITED(status)) {
+        if(WEXITSTATUS(status) != 0)
+            return false;
+    }
+    // If process did not exit normally (interrupted, etc)
+    else
+        return false;
 
     va_end(args);
 
@@ -92,6 +126,50 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    // Making sure the output file is accessible and writable.
+    int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if(fd < 0) {
+        perror("open");
+        return false;
+    }
+
+    // Creating the child process that will do the writing.
+    int cid;
+    int status;
+    fflush(stdout);
+    switch(cid = fork()) {
+        case -1:
+            perror("fork");
+            return false;
+        case 0:
+            /*
+             * Copies the open file descriptor into standard output, which means
+             * anything you write to standard output from this process will go
+             * to the specified file.
+            */
+            if(dup2(fd, 1) < 0) {
+                perror("dup2");
+                return false;
+            }
+            /*
+             * Remember, standard output referes to the same file now so we
+             * don't need this one.
+            */
+            close(fd);
+            // Now it's time to rock!
+            execv(command[0], command);
+            return false;
+        default:
+            // And life goes on for the parent!
+            // If there is an error in calling waitpid()
+            if(waitpid(cid, &status, 0) == -1)
+                return false;
+            // If process exitted normally
+            else if(WIFEXITED(status)) {
+                if(WEXITSTATUS(status) != 0)
+                    return false;
+            }
+    }
 
     va_end(args);
 
