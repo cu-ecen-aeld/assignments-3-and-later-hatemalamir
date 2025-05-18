@@ -1,10 +1,10 @@
 #define _XOPEN_SOURCE
 #include "systemcalls.h"
 #include <stdlib.h>
-#include <sys/wait.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -73,6 +73,7 @@ bool do_exec(int count, ...)
     int status;
     pid_t pid;
 
+    fflush(stdout);
     pid = fork();
     if(pid == -1)
         return false;
@@ -82,8 +83,10 @@ bool do_exec(int count, ...)
     }
 
     // If there is an error in calling waitpid()
-    if(waitpid(pid, &status, 0) == -1)
+    if(waitpid(pid, &status, 0) == -1){
+        perror("waitpid");
         return false;
+    }
     // If process exitted normally
     else if(WIFEXITED(status)) {
         if(WEXITSTATUS(status) != 0)
@@ -169,6 +172,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
                 if(WEXITSTATUS(status) != 0)
                     return false;
             }
+            else
+                return false;
     }
 
     va_end(args);
