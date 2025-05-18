@@ -78,10 +78,12 @@ bool do_exec(int count, ...)
     if(pid == -1)
         return false;
     else if(pid == 0) {
+        // child
         execv(command[0], command);
-        return false;
+        // If you get to that line, exev has failed already!
+        perror("execv");
+        return -1;
     }
-
     // If there is an error in calling waitpid()
     if(waitpid(pid, &status, 0) == -1){
         perror("waitpid");
@@ -89,7 +91,8 @@ bool do_exec(int count, ...)
     }
     // If process exitted normally
     else if(WIFEXITED(status)) {
-        if(WEXITSTATUS(status) != 0)
+        int st = WEXITSTATUS(status); 
+        if(st != 0)
             return false;
     }
     // If process did not exit normally (interrupted, etc)
