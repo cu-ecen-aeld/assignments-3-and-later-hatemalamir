@@ -90,10 +90,10 @@ ${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 echo "Copying BusyBox depencies into rootfs"
-cp ${SYSROOT}/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
-cp ${SYSROOT}/aarch64-none-linux-gnu/libc/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
-cp ${SYSROOT}/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
-cp ${SYSROOT}/aarch64-none-linux-gnu/libc/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
+cp ${FINDER_APP_DIR}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
+cp ${FINDER_APP_DIR}/lib/libm.so.6 ${OUTDIR}/rootfs/lib64/
+cp ${FINDER_APP_DIR}/lib/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
+cp ${FINDER_APP_DIR}/lib/libc.so.6 ${OUTDIR}/rootfs/lib64/
 
 # TODO: Make device nodes
 echo "Creating device nodes dev/null and dev/console"
