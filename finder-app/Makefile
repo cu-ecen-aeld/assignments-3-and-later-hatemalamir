@@ -30,7 +30,7 @@
 include sources.mk
 
 ifdef CROSS_COMPILE
-	CC = $(CROSS_COMPILE)-gcc
+	CC = $(CROSS_COMPILE)gcc
 else
 	CC = gcc
 endif

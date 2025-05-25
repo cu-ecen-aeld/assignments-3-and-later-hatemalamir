@@ -80,24 +80,29 @@ bool do_exec(int count, ...)
     else if(pid == 0) {
         // child
         execv(command[0], command);
-        // If you get to that line, exev has failed already!
-        perror("execv");
-        return -1;
+        // If you get to this line, exev has failed already!
+        perror("> execv");
+        printf("> Child - execv failed to execute %s\n", command[0]);
+        _exit(-1);
     }
     // If there is an error in calling waitpid()
     if(waitpid(pid, &status, 0) == -1){
-        perror("waitpid");
+        perror("> waitpid");
         return false;
     }
     // If process exitted normally
     else if(WIFEXITED(status)) {
         int st = WEXITSTATUS(status); 
-        if(st != 0)
+        if(st != 0) {
+            printf("> Parent - WEXITSTATUS: %d\n", st);
             return false;
+        }
     }
     // If process did not exit normally (interrupted, etc)
-    else
+    else {
+        printf("> Parent - Child did not exit normally!\n");
         return false;
+    }
 
     va_end(args);
 
@@ -135,7 +140,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // Making sure the output file is accessible and writable.
     int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
     if(fd < 0) {
-        perror("open");
+        perror(">> open");
         return false;
     }
 
@@ -145,7 +150,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     fflush(stdout);
     switch(cid = fork()) {
         case -1:
-            perror("fork");
+            perror(">> fork");
             return false;
         case 0:
             /*
@@ -154,7 +159,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
              * to the specified file.
             */
             if(dup2(fd, 1) < 0) {
-                perror("dup2");
+                perror(">> dup2");
                 return false;
             }
             /*
@@ -164,19 +169,28 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
             close(fd);
             // Now it's time to rock!
             execv(command[0], command);
-            return false;
+            perror(">> execv");
+            printf(">> Child - execv failed to execute %s\n", command[0]);
+            _exit(-1);
         default:
-            // And life goes on for the parent!
+            // And life goes on for the parent...
             // If there is an error in calling waitpid()
-            if(waitpid(cid, &status, 0) == -1)
+            if(waitpid(cid, &status, 0) == -1) {
+                perror(">> waitpid");
                 return false;
+            }
             // If process exitted normally
             else if(WIFEXITED(status)) {
-                if(WEXITSTATUS(status) != 0)
+                int st = WEXITSTATUS(status);
+                if(st != 0) {
+                    printf(">> Parent - WEXITSTATUS: %d\n", st);
                     return false;
+                }
             }
-            else
+            else {
+                printf(">> Parent - Child did not exit normally!\n");
                 return false;
+            }
     }
 
     va_end(args);
