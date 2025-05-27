@@ -6,7 +6,7 @@
 # cmake .. && make && run the assignment-autotest application
 mkdir -p build
 cd build
-cmake ..
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 make clean
 make
 cd ..
