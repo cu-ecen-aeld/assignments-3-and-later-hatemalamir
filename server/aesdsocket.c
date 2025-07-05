@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
     memset(&hints, 0, sizeof hints); // make sure the struct is empty
     hints.ai_family = AF_INET; // don't care IPv4 or IPv6
     hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-    if((status = getaddrinfo(NULL, SERV_PORT, &hints, &servinfo)) != 0) {
+    if((status = getaddrinfo("0.0.0.0", SERV_PORT, &hints, &servinfo)) != 0) {
         syslog(LOG_ERR, "getaddrinfo: %s\n", gai_strerror(status));
         return -1;
     }
