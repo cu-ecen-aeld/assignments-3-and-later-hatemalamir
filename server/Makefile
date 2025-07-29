@@ -35,7 +35,7 @@ else
 	CC = gcc
 endif
 
-CFLAGS = -g -Wall -Werror -O0
+CFLAGS = -g -Wall -Werror -O0 -pthread
 OBJ = $(SRC:.c=.o)
 
 TARGET = aesdsocket
