@@ -45,10 +45,10 @@ LDFLAGS ?= -lpthread -lrt
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) $(OBJ) -o $(TARGET)
+	$(CC) $(LDFLAGS) -o $(TARGET) $(OBJ)
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 .PHONY: all clean
 
