@@ -30,15 +30,17 @@
 include sources.mk
 
 ifdef CROSS_COMPILE
-	CC = $(CROSS_COMPILE)gcc
+	CC ?= $(CROSS_COMPILE)gcc
 else
-	CC = gcc
+	CC ?= gcc
 endif
 
-CFLAGS = -g -Wall -Werror -O0 -pthread
+CFLAGS ?= -g -Wall -Werror -O0 -pthread
 OBJ = $(SRC:.c=.o)
 
-TARGET = aesdsocket
+TARGET ?= aesdsocket
+
+LDFLAGS ?= -lpthread -lrt
 
 all: $(TARGET)
 
