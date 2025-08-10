@@ -56,7 +56,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     * TODO: implement per description
     */
     if(buffer->full) {
-        buffer->out_offs = (buffer->out_offs)++ % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
     buffer->entry[(buffer->in_offs)++] = *add_entry;
     if(buffer->in_offs >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
