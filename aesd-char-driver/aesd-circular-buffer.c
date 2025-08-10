@@ -33,9 +33,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     * TODO: implement per description
     */
     size_t total = 0; 
-    size_t i = buffer->out_offs; 
-    if(buffer->full) i++;
-    for(; i != buffer->in_offs; i = (i + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+    for(size_t i = buffer->out_offs; i != buffer->in_offs; i = (i + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
         if((total += buffer->entry[i].size) > char_offset) {
             *entry_offset_byte_rtn = buffer->entry[i].size - (total - char_offset);
             return &(buffer->entry[i]);
