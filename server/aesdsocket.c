@@ -349,6 +349,12 @@ int main(int argc, char* argv[]) {
     // console. You can find those in /var/log/syslog (usually)
     openlog(NULL, 0, LOG_USER);
 
+
+#ifdef USE_AESD_CHAR_DEVICE
+    syslog(LOG_INFO, "USE_AESD_CHAR_DEVICE detected!\n");
+#endif
+    syslog(LOG_INFO, "OUT_FILE: %s\n", OUT_FILE);
+
     long nproc = sysconf(_SC_NPROCESSORS_ONLN);
     if(nproc < 1) {
         perror("sysconf: nproc");
