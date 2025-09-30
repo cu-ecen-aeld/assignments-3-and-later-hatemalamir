@@ -21,7 +21,7 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Hatem Alamir");
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
@@ -29,9 +29,9 @@ struct aesd_dev aesd_device;
 int aesd_open(struct inode *inode, struct file *filp)
 {
     PDEBUG("open");
-    /**
-     * TODO: handle open
-     */
+    struct aesd_dev *dev;
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+    filp->private_data = dev;
     return 0;
 }
 
@@ -48,21 +48,119 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle read
-     */
+    struct aesd_dev *dev = filp->private_data;
+    if(mutex_lock_interruptible(&dev->lock)) {
+        PDEBUG("aesd_read: interrupted while waiting for mutex. Restarting.");
+        return -ERESTARTSYS;
+    }
+    size_t byte_idx;
+    struct aesd_buffer_entry *buf_entry = aesd_circular_buffer_find_entry_offset_for_fpos(dev->buff, *f_pos, &byte_idx);
+    if(buf_entry == NULL) {
+        PDEBUG("aesd_read: failed to read from offset %lld. Out of range!", *f_pos);
+        goto out;
+    }
+    if(count > buf_entry->size)
+        count = buf_entry->size;
+    if(copy_to_user(buf, buf_entry->buffptr, count)) {
+        PDEBUG("aesd_read: failed to copy to user space!");
+        retval = -EFAULT;
+        goto out;
+    }
+    PDEBUG("aesd_read: read %zu bytes from offset %lld", count, *f_pos);
+    *f_pos += count;
+    retval = count;
+out:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    // initialization
+    struct aesd_dev *dev = filp->private_data;
+    if(mutex_lock_interruptible(&dev->lock)) {
+        PDEBUG("aesd_write: interrupted while waiting for mutex. Restarting.");
+        return -ERESTARTSYS;
+    }
     ssize_t retval = -ENOMEM;
-    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle write
-     */
+    // receiving data from user space
+    char *recv_buff = kmalloc(count, GFP_KERNEL);
+    if(!recv_buff) {
+        PDEBUG("aesd_write: failed to allocate %zu bytes for recv_buf.", count);
+        goto out;
+    }
+    if(copy_from_user(recv_buff, buf, count)) {
+        PDEBUG("aesd_write: failed to copy %zu bytes from user space.", count);
+        retval = -EFAULT;
+        goto clean;
+    }
+    //looking up commands in received data
+    size_t out_idx = 0;
+    for(size_t idx = 0; idx < count; idx++)
+        if(recv_buff[idx] ==  '\n') {
+            size_t total_size = idx - out_idx + 1;
+            struct write_entry *cur = dev->write_buff;
+            while(cur != NULL) {
+                total_size += cur->size;
+                cur = cur->next;
+            }
+            struct aesd_buffer_entry entry;
+            entry.buffptr = kmalloc(total_size, GFP_KERNEL);
+            if(!entry.buffptr) {
+                PDEBUG("aesd_write: failed to allocate %zu bytes for command.", total_size);
+                goto clean;
+            }
+            size_t copied_bytes = 0;
+            cur = dev->write_buff;
+            while(dev->write_buff != NULL) {
+                memcpy(entry.buffptr + copied_bytes, dev->write_buff->data, dev->write_buff->size);
+                copied_bytes += dev->write_buff->size;
+                cur = dev->write_buff; 
+                dev->write_buff = dev->write_buff->next;
+                kfree(cur->data);
+                kfree(cur);
+            }
+            memcpy(entry.buffptr + copied_bytes, recv_buff + out_idx, idx - out_idx + 1);
+            entry.size = total_size;
+            struct aesd_buffer_entry ret = aesd_circular_buffer_add_entry(dev->buff, &entry);
+            kfree(ret.buffptr);
+            out_idx = idx + 1;
+        }
+    // cache incomplete commands
+    if(out_idx < count) {
+        struct write_entry *wntry = kmalloc(sizeof(struct write_entry), GFP_KERNEL);
+        if(!wntry) {
+            PDEBUG("aesd_write: failed to allocate write_entry.");
+            goto clean;
+        }
+        size_t wsize = count - out_idx;
+        wntry->data = kmalloc(wsize, GFP_KERNEL);
+        if(!wntry->data) {
+            PDEBUG("aesd_write: failed to allocate %zu bytes for write_entry.", wsize);
+            kfree(wntry);
+            goto clean;
+        }
+        memcpy(wntry->data, recv_buff + out_idx, wsize);
+        wntry->size = wsize;
+        wntry->next = NULL;
+        if(dev->write_buff == NULL)
+            dev->write_buff = wntry;
+        else {
+            struct write_entry *last = dev->write_buff;
+            while(last->next != NULL)
+                last = last->next;
+            last->next = wntry;
+        }
+    }
+
+    PDEBUG("aesd_write: wrote %zu bytes at offset %lld", count, *f_pos);
+    *f_pos += count;
+    retval = count;
+clean:
+    kfree(recv_buff);
+out:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -93,26 +191,30 @@ int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
-    result = alloc_chrdev_region(&dev, aesd_minor, 1,
-            "aesdchar");
-    aesd_major = MAJOR(dev);
+    result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     if (result < 0) {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
     }
+    aesd_major = MAJOR(dev);
     memset(&aesd_device,0,sizeof(struct aesd_dev));
 
-    /**
-     * TODO: initialize the AESD specific portion of the device
-     */
+    mutex_init(&aesd_device.lock);
+    aesd_device.buff = kmalloc(sizeof(struct aesd_circular_buffer), GFP_KERNEL);
+    if(!aesd_device.buff) {
+        printk(KERN_WARNING "Can't allocate circular buffer\n");
+        unregister_chrdev_region(dev, 1);
+        return -EFAULT;
+    }
+    aesd_device.buff->in_offs = 0;
+    aesd_device.buff->out_offs = 0;
+    aesd_device.buff->full = false;
 
     result = aesd_setup_cdev(&aesd_device);
-
     if( result ) {
         unregister_chrdev_region(dev, 1);
     }
     return result;
-
 }
 
 void aesd_cleanup_module(void)
@@ -121,14 +223,19 @@ void aesd_cleanup_module(void)
 
     cdev_del(&aesd_device.cdev);
 
-    /**
-     * TODO: cleanup AESD specific poritions here as necessary
-     */
+    struct write_entry *wedel;
+    while(aesd_device.write_buff != NULL) {
+        kfree(aesd_device.write_buff->data);
+        wedel = aesd_device.write_buff;
+        aesd_device.write_buff = aesd_device.write_buff->next;
+        kfree(wedel);
+    }
+    for(size_t eidx = 0; eidx < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; eidx++)
+        kfree(aesd_device.buff->entry[eidx].buffptr);
+    kfree(aesd_device.buff);
 
     unregister_chrdev_region(devno, 1);
 }
-
-
 
 module_init(aesd_init_module);
 module_exit(aesd_cleanup_module);

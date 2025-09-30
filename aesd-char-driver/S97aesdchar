@@ -1,0 +1,17 @@
+#! /bin/sh
+
+case "$1" in
+    start)
+        echo ">> Starting aesdchar kernel module..."
+        /usr/sbin/aesdchar_load
+        ;;
+    stop)
+        echo "<< Stoping aesdchar kernel module..."
+        /usr/sbin/aesdchar_unload
+        ;;
+    *)
+        echo "Usage: $0 {sart|stop}"
+        exit 1
+esac
+
+exit 0

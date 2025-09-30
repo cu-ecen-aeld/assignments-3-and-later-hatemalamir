@@ -138,7 +138,8 @@ void* con_read(void *th_args) {
                 }
                 pthread_mutex_unlock(&(args->disk_q->lock));
                 uint64_t set = 1;
-                write(args->outf_eid, &set, sizeof(set));
+                if(write(args->outf_eid, &set, sizeof(set)) < sizeof(set))
+                    syslog(LOG_DEBUG, "sock fd: %d, failed to set flag", args->con_fd);
                 goto cleanup;
             }
         if(idx < 0) {
@@ -304,6 +305,7 @@ void clean_con_q(struct con_hash *q) {
     }
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 void* write_time(void *th_args) {
     struct write_time_args *args = (struct write_time_args *)th_args;
     char outstr[64];
@@ -340,6 +342,7 @@ cleanup:
 
     return NULL;
 }
+#endif
 
 int main(int argc, char* argv[]) {
     // We will be using syslog to record troubleshooting messages instead of the
@@ -394,8 +397,10 @@ int main(int argc, char* argv[]) {
 
     // If all good and we can bind and the user wishes, daemonize yourself!
     if(argc > 1 && strcmp(argv[1], "-d") == 0)
-        daemon(0, 0);
-
+        if(daemon(0, 0) < 0) {
+            perror("daemon");
+            exit(-1);
+        }
 
     if(listen(sock_fd, BACKLOG) == -1) {
         perror("listen");
@@ -439,6 +444,7 @@ int main(int argc, char* argv[]) {
         perror("epoll_create1");
         exit(-1);
     }
+#ifndef USE_AESD_CHAR_DEVICE
     // Time tracker
     int tfd = timerfd_create(CLOCK_REALTIME, 0);
     if(tfd == -1) {
@@ -454,6 +460,7 @@ int main(int argc, char* argv[]) {
         perror("timerfd_settime");
         exit(-1);
     }
+#endif
     // Connection counter
     struct num_con_ctl con_ctr;
     if(pthread_mutex_init(&(con_ctr.lock), NULL) != 0) {
@@ -505,6 +512,7 @@ int main(int argc, char* argv[]) {
         exit_status = -1;
         goto cleanup;
     }
+#ifndef USE_AESD_CHAR_DEVICE
     // Track time
     struct epoll_event time_event;
     time_event.data.fd = tfd;
@@ -514,6 +522,7 @@ int main(int argc, char* argv[]) {
         exit_status = -1;
         goto cleanup;
     }
+#endif
 
     int nr_events; 
     struct sockaddr_storage con_addr;
@@ -572,7 +581,8 @@ int main(int argc, char* argv[]) {
             if(serv_events[i].data.fd == outf_eid && threads.threadc < nproc) {
                 // Clear the event
                 uint64_t clear = 1;
-                read(outf_eid, &clear, sizeof(clear));
+                if(read(outf_eid, &clear, sizeof(clear)))
+                    perror("clear outf_eid");
                 struct write_to_disk_args *args = (struct write_to_disk_args*)malloc(sizeof(struct write_to_disk_args));
                 if(!args) {
                     perror("malloc: write_to_disk_args");
@@ -601,10 +611,12 @@ int main(int argc, char* argv[]) {
                 else
                     add_thread(&threads, th);
             }
+#ifndef USE_AESD_CHAR_DEVICE
             if(serv_events[i].data.fd == tfd && threads.threadc < nproc) {
                 // Clear the event
                 uint64_t clear = 1;
-                read(tfd, &clear, sizeof(clear));
+                if(read(tfd, &clear, sizeof(clear)))
+                    perror("clear tfd");
                 struct write_time_args *args = (struct write_time_args*)malloc(sizeof(struct write_to_disk_args));
                 if(!args) {
                     perror("malloc: write_args");
@@ -628,6 +640,7 @@ int main(int argc, char* argv[]) {
                 else
                     add_thread(&threads, th);
             }
+#endif
             else {
                 struct con_hash * con_h;
                 HASH_FIND_INT(recv_q, &(serv_events[i].data.fd) , con_h);
@@ -772,11 +785,13 @@ shutdown:
         free(serv_events);
     free_pbuf(recv_buf.head);
 
+#ifndef USE_AESD_CHAR_DEVICE
     if(out_fctl.fd) {
         if(remove(OUT_FILE) == -1)
             perror("outfile: remove");
         syslog(LOG_INFO, "server: %s removed", OUT_FILE);
     }
+#endif
 
     if(exit_status == 0)
         syslog(LOG_INFO, "Server exited successfully.");

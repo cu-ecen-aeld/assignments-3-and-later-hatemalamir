@@ -36,6 +36,12 @@ else
 endif
 
 CFLAGS ?= -g -Wall -Werror -O0 -pthread
+
+USE_AESD_CHAR_DEVICE ?= 1
+ifneq ($(USE_AESD_CHAR_DEVICE),)
+	CFLAGS += -DUSE_AESD_CHAR_DEVICE=$(USE_AESD_CHAR_DEVICE)
+endif
+
 OBJ = $(SRC:.c=.o)
 
 TARGET ?= aesdsocket
