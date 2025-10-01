@@ -174,6 +174,13 @@ void* write_to_disk(void *th_args) {
     pthread_mutex_lock(&(args->out_fctl->lock));
     pthread_mutex_lock(&(args->recv_buf->lock));
     pthread_mutex_lock(&(args->disk_q->lock));
+#ifdef USE_AESD_CHAR_DEVICE
+    args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
+    if (args->out_fctl->fd == -1) {
+        perror("open: out_fctl: write_to_disk");
+        goto cleanup;
+    }
+#endif
     if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
         perror("outfile: seek: write_to_disk");
         goto cleanup;
@@ -225,6 +232,9 @@ void* write_to_disk(void *th_args) {
         args->disk_q->head = next_elem;
     }
     args->disk_q->tail = NULL;
+#ifdef USE_AESD_CHAR_DEVICE
+    close(args->out_fctl->fd);
+#endif
 cleanup:
     if(args->recv_buf->head == NULL)
         args->recv_buf->tail = NULL;
@@ -245,6 +255,13 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
+#ifdef USE_AESD_CHAR_DEVICE
+    args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
+    if (args->out_fctl->fd == -1) {
+        perror("open: out_fctl: con_write");
+        goto cleanup;
+    }
+#endif
     if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
         perror("outfile: seek: con_write");
         goto cleanup;
@@ -266,6 +283,9 @@ void* con_write(void *th_args) {
         syslog(LOG_INFO, "sock fd: %d, sent %d bytes", args->con_fd, sent_bytes);
     }
     syslog(LOG_INFO, "sock fd: %d, total sent bytes: %d", args->con_fd, total_sent_bytes);
+#ifdef USE_AESD_CHAR_DEVICE
+    close(args->out_fctl->fd);
+#endif
 cleanup:
     pthread_mutex_unlock(&(args->out_fctl->lock));
     if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->con_fd, NULL))
@@ -476,11 +496,13 @@ int main(int argc, char* argv[]) {
         perror("pthread_mutex_init: out_fctl");
         exit(-1);
     }
+#ifndef USE_AESD_CHAR_DEVICE
     out_fctl.fd = open(OUT_FILE, O_RDWR | O_CREAT | O_APPEND, 0644);
     if (out_fctl.fd == -1) {
         perror("open: out_fctl");
         exit(-1);
     }
+#endif
     int outf_eid = eventfd(0, 0);
     if(outf_eid == -1) {
         perror("eventfd");
