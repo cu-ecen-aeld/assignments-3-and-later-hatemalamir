@@ -35,20 +35,20 @@ else
 	CC ?= gcc
 endif
 
-CFLAGS ?= -g -Wall -Werror -O0 -pthread
-LDFLAGS ?= -lpthread -lrt
 
 USE_AESD_CHAR_DEVICE ?= 1
 ifeq ($(USE_AESD_CHAR_DEVICE),1)
   CPPFLAGS += -DUSE_AESD_CHAR_DEVICE
 endif
-
-TARGET ?= aesdsocket
+CFLAGS ?= -g -Wall -Werror -O0 -pthread
+LDFLAGS ?= -lpthread -lrt
 
 $(info >>> CC = $(CC))
+$(info >>> CPPFLAGS = $(CPPFLAGS))
 $(info >>> CFLAGS = $(CFLAGS))
-$(info >>> CPPFLAGS = $(CFLAGS))
 $(info >>> LDFLAGS = $(LDFLAGS))
+
+TARGET ?= aesdsocket
 
 OBJ = $(SRC:.c=.o)
 
