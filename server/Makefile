@@ -38,10 +38,12 @@ endif
 
 CFLAGS ?= -g -Wall -Werror -O0 -pthread
 LDFLAGS ?= -lpthread -lrt
+
 USE_AESD_CHAR_DEVICE ?= 1
 ifeq ($(USE_AESD_CHAR_DEVICE),1)
   EXTRA_CFLAGS += -DUSE_AESD_CHAR_DEVICE
 endif
+$(info >>> EXTRA_CFLAGS = $(EXTRA_CFLAGS))
 
 TARGET ?= aesdsocket
 
