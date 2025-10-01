@@ -784,7 +784,6 @@ shutdown:
     syslog(LOG_INFO, "server: all connections closed");
     close(epfd);
     close(sock_fd);
-    close(tfd);
     close(outf_eid);
     // Free dynamic memory
     if(serv_events)
@@ -792,6 +791,7 @@ shutdown:
     free_pbuf(recv_buf.head);
 
 #ifndef USE_AESD_CHAR_DEVICE
+    close(tfd);
     if(out_fctl.fd) {
         if(remove(OUT_FILE) == -1)
             perror("outfile: remove");

@@ -5,10 +5,11 @@
 #define BACKLOG 128 // how many pending connections server queue will hold
 #define CON_BUF_LEN 1024 // how many bytes server can receive at a time 
 #define MAX_EPOLL_EVENTS 64 // Maximum number of polled events
+                            //
 #ifdef USE_AESD_CHAR_DEVICE
-#define    OUT_FILE "/dev/aesdchar" 
+#define OUT_FILE "/dev/aesdchar" 
 #else
-#define    OUT_FILE "/var/tmp/aesdsocketdata" // Where server writes out packets 
+#define OUT_FILE "/var/tmp/aesdsocketdata" // Where server writes out packets 
 #endif
 
 struct num_con_ctl {

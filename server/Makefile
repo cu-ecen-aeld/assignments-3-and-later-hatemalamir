@@ -35,23 +35,23 @@ else
 	CC ?= gcc
 endif
 
-CFLAGS ?= -g -Wall -Werror -O0 -pthread
+CFLAGS += -g -Wall -Werror -O0 -pthread
 
 USE_AESD_CHAR_DEVICE ?= 1
-ifneq ($(USE_AESD_CHAR_DEVICE),)
-	CFLAGS += -DUSE_AESD_CHAR_DEVICE=$(USE_AESD_CHAR_DEVICE)
+ifeq ($(USE_AESD_CHAR_DEVICE),1)
+  CFLAGS += -DUSE_AESD_CHAR_DEVICE
 endif
 
-OBJ = $(SRC:.c=.o)
+LDFLAGS += -lpthread -lrt
 
 TARGET ?= aesdsocket
 
-LDFLAGS ?= -lpthread -lrt
+OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) $(LDFLAGS) -o $(TARGET) $(OBJ)
+	$(CC) $(CFLAGS) $(OBJ) $(LDFLAGS) -o $(TARGET)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
