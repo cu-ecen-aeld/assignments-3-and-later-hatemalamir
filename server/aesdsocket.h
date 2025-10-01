@@ -6,6 +6,7 @@
 #define CON_BUF_LEN 1024 // how many bytes server can receive at a time 
 #define MAX_EPOLL_EVENTS 64 // Maximum number of polled events
                             //
+#undef OUT_FILE             /* undef it, just in case */
 #ifdef USE_AESD_CHAR_DEVICE
 #define OUT_FILE "/dev/aesdchar" 
 #else
