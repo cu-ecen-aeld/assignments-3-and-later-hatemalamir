@@ -46,6 +46,10 @@ LDFLAGS += -lpthread -lrt
 
 TARGET ?= aesdsocket
 
+$(info >>> CC = $(CC))
+$(info >>> CFLAGS = $(CFLAGS))
+$(info >>> LDFLAGS = $(LDFLAGS))
+
 OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
