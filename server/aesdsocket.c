@@ -88,6 +88,7 @@ void free_pbuf(struct packet *pbuf_head) {
 }
 
 void* con_read(void *th_args) {
+    syslog(LOG_INFO, "con_read started.");
     struct con_read_args *args = (struct con_read_args *)th_args;
     int recv_bytes=0, total_recv_bytes=0, recv_packet_len = 0, idx;
     struct packet *pbuf_head = NULL, *pbuf_tail = NULL;
@@ -166,10 +167,12 @@ cleanup:
     args->thctl->done = 1;
     free(th_args);
 
+    syslog(LOG_INFO, "con_read finished.");
     return NULL;
 }
 
 void* write_to_disk(void *th_args) {
+    syslog(LOG_INFO, "write_to_disk started.");
     struct write_to_disk_args *args = (struct write_to_disk_args *)th_args;
     pthread_mutex_lock(&(args->out_fctl->lock));
     pthread_mutex_lock(&(args->recv_buf->lock));
@@ -180,11 +183,12 @@ void* write_to_disk(void *th_args) {
         perror("open: out_fctl: write_to_disk");
         goto cleanup;
     }
-#endif
+#else
     if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
         perror("outfile: seek: write_to_disk");
         goto cleanup;
     }
+#endif
     int write_bytes, total_write_bytes=0;
     struct packet *next_packet;
     while(args->recv_buf->head != NULL) {
@@ -244,10 +248,12 @@ cleanup:
     args->thctl->done = 1;
     free(th_args);
 
+    syslog(LOG_INFO, "write_to_disk finished.");
     return NULL;
 }
 
 void* con_write(void *th_args) {
+    syslog(LOG_INFO, "con_write started.");
     struct con_write_args *args = (struct con_write_args *)th_args;
     char *con_buf = (char *)malloc(CON_BUF_LEN);
     if(!con_buf) {
@@ -261,11 +267,12 @@ void* con_write(void *th_args) {
         perror("open: out_fctl: con_write");
         goto cleanup;
     }
-#endif
+#else
     if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
         perror("outfile: seek: con_write");
         goto cleanup;
     }
+#endif
     int  read_bytes, sent_bytes, total_sent_bytes=0;
     while((read_bytes = read(args->out_fctl->fd, con_buf, CON_BUF_LEN)) != 0) {
         syslog(LOG_INFO, "sock fd: %d, read %d bytes from %s", args->con_fd, read_bytes, OUT_FILE);
@@ -300,6 +307,7 @@ cleanup:
     args->thctl->done = 1;
     free(th_args);
 
+    syslog(LOG_INFO, "con_write finished.");
     return NULL;
 }
 
@@ -327,6 +335,7 @@ void clean_con_q(struct con_hash *q) {
 
 #ifndef USE_AESD_CHAR_DEVICE
 void* write_time(void *th_args) {
+    syslog(LOG_INFO, "write_time started.");
     struct write_time_args *args = (struct write_time_args *)th_args;
     char outstr[64];
     time_t t;
@@ -360,6 +369,7 @@ cleanup:
     args->thctl->done = 1;
     free(th_args);
 
+    syslog(LOG_INFO, "write_time finished.");
     return NULL;
 }
 #endif
