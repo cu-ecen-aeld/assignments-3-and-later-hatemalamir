@@ -206,6 +206,8 @@ int aesd_init_module(void)
         unregister_chrdev_region(dev, 1);
         return -EFAULT;
     }
+    for(size_t eidx = 0; eidx < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; eidx++)
+        aesd_device.buff->entry[eidx].buffptr = NULL;
     aesd_device.buff->in_offs = 0;
     aesd_device.buff->out_offs = 0;
     aesd_device.buff->full = false;
@@ -231,7 +233,8 @@ void aesd_cleanup_module(void)
         kfree(wedel);
     }
     for(size_t eidx = 0; eidx < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; eidx++)
-        kfree(aesd_device.buff->entry[eidx].buffptr);
+        if(aesd_device.buff->entry[eidx].buffptr != NULL)
+            kfree(aesd_device.buff->entry[eidx].buffptr);
     kfree(aesd_device.buff);
 
     unregister_chrdev_region(devno, 1);
