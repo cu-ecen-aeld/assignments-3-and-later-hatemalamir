@@ -18,6 +18,7 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -42,6 +43,30 @@ int aesd_release(struct inode *inode, struct file *filp)
      * TODO: handle release
      */
     return 0;
+}
+
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence) {
+    struct aesd_dev *dev = filp->private_data;
+    loff_t newpos;
+
+    switch(whence) {
+        case 0: /*SEEK_SET*/
+            newpos = off;
+            break;
+        case 1: /*SEEK_CUR*/
+            newpos = filp->f_pos + off;
+            break;
+        case 2: /*SEEK_END*/
+            newpos = dev->size + off;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    if(newpos < 0)
+        return -EINVAL;
+    filp->f_pos = newpos;
+    return newpos;
 }
 
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
@@ -163,12 +188,67 @@ out:
     mutex_unlock(&dev->lock);
     return retval;
 }
+
+long seek_ctl(struct file *filp, const void __user *user_buff) {
+    struct aesd_seekto seek_buff;
+    memset(&seek_buff,0,sizeof(struct aesd_seekto));
+    if(copy_from_user(&seek_buff, user_buff, sizeof(struct aesd_seekto))) {
+        PDEBUG("aesd_ioctl: failed to copy aesd_seekto from user space.");
+        return -EFAULT;
+    }
+
+    //validate parameters
+    if(aesd_device.buff.in_offs == aesd_device.buff.out_offs) {
+        PDEBUG("seek_ctl: device buffer is empty.");
+        return -EINVAL;
+    }
+    if(seek_buff.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || (!aesd_device.buff.full && seek_buff.write_cmd > aesd_device.buff.out_offs)) {
+        PDEBUG("seek_ctl: out of range write_cmd %" PRIu32);
+        return -EINVAL;
+    }
+    uint32_t entry_idx = (aesd_device.buff.out_offs + seek_buff.write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED ? aesd_device.buff.full : seek_buff.write_cmd;
+    if(seek_buff.write_cmd_offset >= aesd_device.buff->entry[entry_idx].size) {
+        PDEBUG("seek_ctl: out of range write_cmd_offset %" PRIu32);
+        return -EINVAL;
+    }
+
+    uint32_t seek_off = 0;
+    for(uint32_t idx = aesd_device.buff.out_offs; idx < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
+        if(idx == entry_idx) {
+            seek_off += seek_buff.write_cmd_offset;
+            break;
+        }
+        seek_off += aesd_device.buff->entry[idx].size;
+    }
+    aesd_llseek(filp, seek_off, SEEK_SET);
+
+    return 0;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+    if(_IOC_TYPE(cmd) != AESD_IOC_MAGIC)
+        return -ENOTTY;
+    if(_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR)
+        return -ENOTTY;
+
+    switch(cmd) {
+        case AESDCHAR_IOCSEEKTO:
+            return seek_ctl(filp, arg);
+        default:
+            return -ENOTTY;
+    }
+
+    return 0;
+}
+
 struct file_operations aesd_fops = {
-    .owner =    THIS_MODULE,
-    .read =     aesd_read,
-    .write =    aesd_write,
-    .open =     aesd_open,
-    .release =  aesd_release,
+    .owner =          THIS_MODULE,
+    .llseek =         aesd_llseek,
+    .read =           aesd_read,
+    .write =          aesd_write,
+    .unlocked_ioctl = aesd_ioctl;
+    .open =           aesd_open,
+    .release =        aesd_release,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

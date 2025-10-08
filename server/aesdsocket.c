@@ -33,8 +33,10 @@
 #include <sys/time.h>
 #include <sys/timerfd.h>
 #include <sys/eventfd.h>
+#include <sys/ioctl.h>
 #include "uthash.h"
 #include "aesdsocket.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 static volatile sig_atomic_t terminate = 0;
 
@@ -191,13 +193,48 @@ void* write_to_disk(void *th_args) {
 #endif
     int write_bytes, total_write_bytes=0;
     struct packet *next_packet;
+    int last_out_idx = 0;
     while(args->recv_buf->head != NULL) {
-        write_bytes = write(args->out_fctl->fd, args->recv_buf->head->chars, args->recv_buf->head->len);
-        if(write_bytes == -1) {
-            perror("outfile: write");
-            goto cleanup;
+        for(int idx = 0; idx < args->recv_buf->head->len; idx++)
+            if(args->recv_buf->head->chars[idx] == '\n') {
+                if(strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
+                    uint32_t write_cmd, write_cmd_offset;
+                    if(sscanf(args->recv_buf->head->chars + last_out_idx + 19, "%u:%u", &write_cmd, &write_cmd_offset) == 2) {
+                        struct aesd_seekto seek_args;
+                        seek_args.write_cmd = write_cmd;
+                        seek_args.write_cmd_offset = write_cmd_offset;
+                        if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
+                            perror("write_to_disk: ioctl");
+                            goto cleanup;
+                        }
+                    }
+                    else {
+                        perror("write_to_disk: sscanf");
+                        goto cleanup;
+                    }
+                }
+                else {
+                    write_bytes = write(args->out_fctl->fd, args->recv_buf->head->chars + last_out_idx, idx - last_out_idx + 1);
+                    if(write_bytes == -1) {
+                        perror("outfile: write");
+                        goto cleanup;
+                    }
+                    total_write_bytes += write_bytes;
+                }
+                last_out_idx = idx + 1;
+            }
+        /* This means incomplete packets, becaues we're missing the '\n' at end.
+         * We're not handling incomplete packets. Maybe at some point.
+         * */
+        if(last_out_idx < args->recv_buf->head->len) {
+            write_bytes = write(args->out_fctl->fd, args->recv_buf->head->chars + last_out_idx, args->recv_buf->head->len - last_out_idx);
+            if(write_bytes == -1) {
+                perror("outfile: write");
+                goto cleanup;
+            }
+            total_write_bytes += write_bytes;
         }
-        total_write_bytes += write_bytes;
+
         next_packet = args->recv_buf->head->next;
         free(args->recv_buf->head->chars);
         free(args->recv_buf->head);
@@ -220,7 +257,7 @@ void* write_to_disk(void *th_args) {
              * It might look a bit extreme to close the connection if a malloc
              * error occured which is no fault of the connection itself and we
              * could leave it in the queue and retry later. Although, I chose
-             * thisbecause it's simpler, and if the server is actually
+             * this because it's simpler, and if the server is actually
              * struggling with memory that would relieve some of the stress.
              */
             if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->disk_q->head->con_fd, NULL))
