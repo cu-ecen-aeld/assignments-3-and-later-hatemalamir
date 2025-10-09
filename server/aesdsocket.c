@@ -273,9 +273,11 @@ void* write_to_disk(void *th_args) {
         args->disk_q->head = next_elem;
     }
     args->disk_q->tail = NULL;
+/*
 #ifdef USE_AESD_CHAR_DEVICE
     close(args->out_fctl->fd);
 #endif
+*/
 cleanup:
     if(args->recv_buf->head == NULL)
         args->recv_buf->tail = NULL;
@@ -299,11 +301,14 @@ void* con_write(void *th_args) {
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
 #ifdef USE_AESD_CHAR_DEVICE
+    /*
     args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
     if (args->out_fctl->fd == -1) {
         perror("open: out_fctl: con_write");
         goto cleanup;
     }
+    */
+    syslog(LOG_DEBUG, "con_write: device file descriptor should already by open.");
 #else
     if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
         perror("outfile: seek: con_write");
