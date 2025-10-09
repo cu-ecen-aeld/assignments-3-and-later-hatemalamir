@@ -40,9 +40,10 @@
 
 static volatile sig_atomic_t terminate = 0;
 
-static int use_aesd_char_device = 0;
 #ifdef USE_AESD_CHAR_DEVICE
-use_aesd_char_device = 1;
+static int use_aesd_char_device = 1;
+#else
+static int use_aesd_char_device = 0;
 #endif
 
 void sigterm_handler(int s) {
@@ -443,7 +444,7 @@ int main(int argc, char* argv[]) {
     openlog(NULL, 0, LOG_USER);
 
     if(use_aesd_char_device)
-        syslog(LOG_INFO, "USE_AESD_CHAR_DEVICE detected!\n");
+        syslog(LOG_INFO, "use_aesd_char_device detected!\n");
     syslog(LOG_INFO, "OUT_FILE: %s\n", OUT_FILE);
 
     long nproc = sysconf(_SC_NPROCESSORS_ONLN);
