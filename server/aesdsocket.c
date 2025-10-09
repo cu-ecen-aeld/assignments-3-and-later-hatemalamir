@@ -40,6 +40,11 @@
 
 static volatile sig_atomic_t terminate = 0;
 
+static int use_aesd_char_device = 0;
+#ifdef USE_AESD_CHAR_DEVICE
+use_aesd_char_device = 1;
+#endif
+
 void sigterm_handler(int s) {
     (void)s; // quiet unused variable warning
     syslog(LOG_INFO, "Caught signal, exiting");
@@ -173,31 +178,39 @@ cleanup:
     return NULL;
 }
 
+int write_bytes_to_disk() {
+
+    return 0;
+}
+
 void* write_to_disk(void *th_args) {
     syslog(LOG_INFO, "write_to_disk started.");
     struct write_to_disk_args *args = (struct write_to_disk_args *)th_args;
     pthread_mutex_lock(&(args->out_fctl->lock));
     pthread_mutex_lock(&(args->recv_buf->lock));
     pthread_mutex_lock(&(args->disk_q->lock));
-#ifdef USE_AESD_CHAR_DEVICE
-    args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
-    if (args->out_fctl->fd == -1) {
-        perror("open: out_fctl: write_to_disk");
-        goto cleanup;
+    if(use_aesd_char_device) {
+        args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
+        if (args->out_fctl->fd == -1) {
+            perror("open: out_fctl: write_to_disk");
+            goto cleanup;
+        }
     }
-#else
-    if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
-        perror("outfile: seek: write_to_disk");
-        goto cleanup;
+    else {
+        if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
+            perror("outfile: seek: write_to_disk");
+            goto cleanup;
+        }
     }
-#endif
+
     int write_bytes, total_write_bytes=0;
     struct packet *next_packet;
     int last_out_idx = 0;
+    int seek_cmd_found = 0;
     while(args->recv_buf->head != NULL) {
         for(int idx = 0; idx < args->recv_buf->head->len; idx++)
             if(args->recv_buf->head->chars[idx] == '\n') {
-                if(strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
+                if(use_aesd_char_device && strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
                     uint32_t write_cmd, write_cmd_offset;
                     if(sscanf(args->recv_buf->head->chars + last_out_idx + 19, "%u:%u", &write_cmd, &write_cmd_offset) == 2) {
                         struct aesd_seekto seek_args;
@@ -207,6 +220,7 @@ void* write_to_disk(void *th_args) {
                             perror("write_to_disk: ioctl");
                             goto cleanup;
                         }
+                        seek_cmd_found = 1;
                     }
                     else {
                         perror("write_to_disk: sscanf");
@@ -220,6 +234,7 @@ void* write_to_disk(void *th_args) {
                         goto cleanup;
                     }
                     total_write_bytes += write_bytes;
+                    seek_cmd_found = 0;
                 }
                 last_out_idx = idx + 1;
             }
@@ -241,6 +256,17 @@ void* write_to_disk(void *th_args) {
         args->recv_buf->head = next_packet;
     }
     syslog(LOG_INFO, "Wrote %d bytes to %s", total_write_bytes, OUT_FILE);
+
+    if(use_aesd_char_device)
+        if(!seek_cmd_found) {
+            struct aesd_seekto seek_args;
+            seek_args.write_cmd = 0;
+            seek_args.write_cmd_offset = 0;
+            if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
+                perror("write_to_disk: ioctl: reset index");
+                goto cleanup;
+            }
+        }
 
     struct con_l_elem *next_elem;
     while(args->disk_q->head != NULL) {
@@ -274,9 +300,8 @@ void* write_to_disk(void *th_args) {
     }
     args->disk_q->tail = NULL;
 /*
-#ifdef USE_AESD_CHAR_DEVICE
-    close(args->out_fctl->fd);
-#endif
+    if(use_aesd_char_device)
+        close(args->out_fctl->fd);
 */
 cleanup:
     if(args->recv_buf->head == NULL)
@@ -300,7 +325,6 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
-#ifdef USE_AESD_CHAR_DEVICE
     /*
     args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
     if (args->out_fctl->fd == -1) {
@@ -308,13 +332,12 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     */
-    syslog(LOG_DEBUG, "con_write: device file descriptor should already by open.");
-#else
-    if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
-        perror("outfile: seek: con_write");
-        goto cleanup;
-    }
-#endif
+    if(!use_aesd_char_device)
+        if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
+            perror("outfile: seek: con_write");
+            goto cleanup;
+        }
+
     int  read_bytes, sent_bytes, total_sent_bytes=0;
     while((read_bytes = read(args->out_fctl->fd, con_buf, CON_BUF_LEN)) != 0) {
         syslog(LOG_INFO, "sock fd: %d, read %d bytes from %s", args->con_fd, read_bytes, OUT_FILE);
@@ -332,9 +355,9 @@ void* con_write(void *th_args) {
         syslog(LOG_INFO, "sock fd: %d, sent %d bytes", args->con_fd, sent_bytes);
     }
     syslog(LOG_INFO, "sock fd: %d, total sent bytes: %d", args->con_fd, total_sent_bytes);
-#ifdef USE_AESD_CHAR_DEVICE
-    close(args->out_fctl->fd);
-#endif
+
+    if(use_aesd_char_device)
+        close(args->out_fctl->fd);
 cleanup:
     pthread_mutex_unlock(&(args->out_fctl->lock));
     if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->con_fd, NULL))
@@ -375,7 +398,6 @@ void clean_con_q(struct con_hash *q) {
     }
 }
 
-#ifndef USE_AESD_CHAR_DEVICE
 void* write_time(void *th_args) {
     syslog(LOG_INFO, "write_time started.");
     struct write_time_args *args = (struct write_time_args *)th_args;
@@ -414,16 +436,14 @@ cleanup:
     syslog(LOG_INFO, "write_time finished.");
     return NULL;
 }
-#endif
 
 int main(int argc, char* argv[]) {
     // We will be using syslog to record troubleshooting messages instead of the
     // console. You can find those in /var/log/syslog (usually)
     openlog(NULL, 0, LOG_USER);
 
-#ifdef USE_AESD_CHAR_DEVICE
-    syslog(LOG_INFO, "USE_AESD_CHAR_DEVICE detected!\n");
-#endif
+    if(use_aesd_char_device)
+        syslog(LOG_INFO, "USE_AESD_CHAR_DEVICE detected!\n");
     syslog(LOG_INFO, "OUT_FILE: %s\n", OUT_FILE);
 
     long nproc = sysconf(_SC_NPROCESSORS_ONLN);
@@ -521,23 +541,25 @@ int main(int argc, char* argv[]) {
         perror("epoll_create1");
         exit(-1);
     }
-#ifndef USE_AESD_CHAR_DEVICE
-    // Time tracker
-    int tfd = timerfd_create(CLOCK_REALTIME, 0);
-    if(tfd == -1) {
-        perror("timerfd_create");
-        exit(-1);
+    int tfd = -1;
+    if(!use_aesd_char_device) {
+        // Time tracker
+        tfd = timerfd_create(CLOCK_REALTIME, 0);
+        if(tfd == -1) {
+            perror("timerfd_create");
+            exit(-1);
+        }
+        struct itimerspec its;
+        its.it_value.tv_sec = 10;
+        its.it_value.tv_nsec = 0;
+        its.it_interval.tv_sec = 10;
+        its.it_interval.tv_nsec = 0;
+        if(timerfd_settime(tfd, 0, &its, NULL) == -1) {
+            perror("timerfd_settime");
+            exit(-1);
+        }
     }
-    struct itimerspec its;
-    its.it_value.tv_sec = 10;
-    its.it_value.tv_nsec = 0;
-    its.it_interval.tv_sec = 10;
-    its.it_interval.tv_nsec = 0;
-    if(timerfd_settime(tfd, 0, &its, NULL) == -1) {
-        perror("timerfd_settime");
-        exit(-1);
-    }
-#endif
+
     // Connection counter
     struct num_con_ctl con_ctr;
     if(pthread_mutex_init(&(con_ctr.lock), NULL) != 0) {
@@ -551,13 +573,14 @@ int main(int argc, char* argv[]) {
         perror("pthread_mutex_init: out_fctl");
         exit(-1);
     }
-#ifndef USE_AESD_CHAR_DEVICE
-    out_fctl.fd = open(OUT_FILE, O_RDWR | O_CREAT | O_APPEND, 0644);
-    if (out_fctl.fd == -1) {
-        perror("open: out_fctl");
-        exit(-1);
+    if(!use_aesd_char_device) {
+        out_fctl.fd = open(OUT_FILE, O_RDWR | O_CREAT | O_APPEND, 0644);
+        if (out_fctl.fd == -1) {
+            perror("open: out_fctl");
+            exit(-1);
+        }
     }
-#endif
+
     int outf_eid = eventfd(0, 0);
     if(outf_eid == -1) {
         perror("eventfd");
@@ -591,17 +614,17 @@ int main(int argc, char* argv[]) {
         exit_status = -1;
         goto cleanup;
     }
-#ifndef USE_AESD_CHAR_DEVICE
-    // Track time
-    struct epoll_event time_event;
-    time_event.data.fd = tfd;
-    time_event.events = EPOLLIN;
-    if(epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &time_event) < 0) {
-        perror("epoll_ctl: tfd");
-        exit_status = -1;
-        goto cleanup;
+    if(!use_aesd_char_device) {
+        // Track time
+        struct epoll_event time_event;
+        time_event.data.fd = tfd;
+        time_event.events = EPOLLIN;
+        if(epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &time_event) < 0) {
+            perror("epoll_ctl: tfd");
+            exit_status = -1;
+            goto cleanup;
+        }
     }
-#endif
 
     int nr_events; 
     struct sockaddr_storage con_addr;
@@ -690,8 +713,7 @@ int main(int argc, char* argv[]) {
                 else
                     add_thread(&threads, th);
             }
-#ifndef USE_AESD_CHAR_DEVICE
-            if(serv_events[i].data.fd == tfd && threads.threadc < nproc) {
+            if(!use_aesd_char_device && serv_events[i].data.fd == tfd && threads.threadc < nproc) {
                 // Clear the event
                 uint64_t clear = 1;
                 if(read(tfd, &clear, sizeof(clear)))
@@ -719,7 +741,6 @@ int main(int argc, char* argv[]) {
                 else
                     add_thread(&threads, th);
             }
-#endif
             else {
                 struct con_hash * con_h;
                 HASH_FIND_INT(recv_q, &(serv_events[i].data.fd) , con_h);
@@ -863,14 +884,14 @@ shutdown:
         free(serv_events);
     free_pbuf(recv_buf.head);
 
-#ifndef USE_AESD_CHAR_DEVICE
-    close(tfd);
-    if(out_fctl.fd) {
-        if(remove(OUT_FILE) == -1)
-            perror("outfile: remove");
-        syslog(LOG_INFO, "server: %s removed", OUT_FILE);
+    if(!use_aesd_char_device) {
+        close(tfd);
+        if(out_fctl.fd) {
+            if(remove(OUT_FILE) == -1)
+                perror("outfile: remove");
+            syslog(LOG_INFO, "server: %s removed", OUT_FILE);
+        }
     }
-#endif
 
     if(exit_status == 0)
         syslog(LOG_INFO, "Server exited successfully.");
