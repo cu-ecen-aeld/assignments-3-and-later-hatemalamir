@@ -154,6 +154,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             entry.size = total_size;
             struct aesd_buffer_entry ret = aesd_circular_buffer_add_entry(dev->buff, &entry);
             kfree(ret.buffptr);
+            *f_pos -= ret.size;
             out_idx = idx + 1;
         }
     // cache incomplete commands
@@ -202,7 +203,7 @@ long seek_ctl(struct file *filp, const void __user *user_buff) {
     }
 
     //validate parameters
-    if(aesd_device.buff->in_offs == aesd_device.buff->out_offs) {
+    if(!aesd_device.buff->full && aesd_device.buff->in_offs == aesd_device.buff->out_offs) {
         PDEBUG("seek_ctl: device buffer is empty.");
         return -EINVAL;
     }

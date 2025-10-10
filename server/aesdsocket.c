@@ -204,9 +204,7 @@ void* write_to_disk(void *th_args) {
     struct packet *next_packet;
     int last_out_idx = 0;
     int seek_cmd_found = 0;
-    syslog(LOG_DEBUG, "write_to_disk, now processing recv_buf");
     while(args->recv_buf->head != NULL) {
-        syslog(LOG_DEBUG, "write_to_disk, found %d bytes in recv_buf", args->recv_buf->head->len);
         for(int idx = 0; idx < args->recv_buf->head->len; idx++)
             if(args->recv_buf->head->chars[idx] == '\n') {
                 if(use_aesd_char_device && strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
@@ -262,6 +260,7 @@ void* write_to_disk(void *th_args) {
         seek_args.write_cmd_offset = 0;
         if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
             perror("write_to_disk: ioctl: reset index");
+            syslog(LOG_ERR, "write_to_disk: ioctl failed while resetting index.");
             goto cleanup;
         }
     }
