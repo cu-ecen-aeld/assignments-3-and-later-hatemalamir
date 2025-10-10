@@ -198,8 +198,11 @@ void* write_to_disk(void *th_args) {
         }
         syslog(LOG_INFO, "write_to_disk, opened %s", OUT_FILE);
     }
-    if(lseek(args->out_fctl->fd, 0, SEEK_END) < 0) {
+    int curr_off = lseek(args->out_fctl->fd, 0, SEEK_END);
+    syslog(LOG_DEBUG, "write_to_disk, current offset %d", curr_off);
+    if(curr_off < 0) {
         perror("outfile: seek: write_to_disk");
+        syslog(LOG_ERR, "write_to_disk, lseek returned error %d.", curr_off);
         goto cleanup;
     }
 
