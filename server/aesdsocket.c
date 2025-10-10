@@ -179,30 +179,24 @@ cleanup:
     return NULL;
 }
 
-int write_bytes_to_disk() {
-
-    return 0;
-}
-
 void* write_to_disk(void *th_args) {
     syslog(LOG_INFO, "write_to_disk started.");
     struct write_to_disk_args *args = (struct write_to_disk_args *)th_args;
     pthread_mutex_lock(&(args->out_fctl->lock));
     pthread_mutex_lock(&(args->recv_buf->lock));
     pthread_mutex_lock(&(args->disk_q->lock));
-    if(use_aesd_char_device && args->out_fctl->fd < 0) {
-        args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
-        if (args->out_fctl->fd < 0) {
-            perror("open: out_fctl: write_to_disk");
-            goto cleanup;
+    if(use_aesd_char_device) {
+        if(args->out_fctl->fd < 0) {
+            args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
+            if (args->out_fctl->fd < 0) {
+                perror("open: out_fctl: write_to_disk");
+                goto cleanup;
+            }
+            syslog(LOG_INFO, "write_to_disk, opened %s", OUT_FILE);
         }
-        syslog(LOG_INFO, "write_to_disk, opened %s", OUT_FILE);
     }
-    int curr_off = lseek(args->out_fctl->fd, 0, SEEK_END);
-    syslog(LOG_DEBUG, "write_to_disk, current offset %d", curr_off);
-    if(curr_off < 0) {
+    else if(lseek(args->out_fctl->fd, 0, SEEK_END) < 0) {
         perror("outfile: seek: write_to_disk");
-        syslog(LOG_ERR, "write_to_disk, lseek returned error %d.", curr_off);
         goto cleanup;
     }
 
@@ -262,16 +256,15 @@ void* write_to_disk(void *th_args) {
     }
     syslog(LOG_INFO, "Wrote %d bytes to %s", total_write_bytes, OUT_FILE);
 
-    if(use_aesd_char_device)
-        if(!seek_cmd_found) {
-            struct aesd_seekto seek_args;
-            seek_args.write_cmd = 0;
-            seek_args.write_cmd_offset = 0;
-            if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
-                perror("write_to_disk: ioctl: reset index");
-                goto cleanup;
-            }
+    if(use_aesd_char_device && !seek_cmd_found) {
+        struct aesd_seekto seek_args;
+        seek_args.write_cmd = 0;
+        seek_args.write_cmd_offset = 0;
+        if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
+            perror("write_to_disk: ioctl: reset index");
+            goto cleanup;
         }
+    }
 
     struct con_l_elem *next_elem;
     while(args->disk_q->head != NULL) {
@@ -326,8 +319,7 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
-    // if(!use_aesd_char_device)
-    if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
+    if(!use_aesd_char_device && lseek(args->out_fctl->fd, 0, SEEK_SET) < 0) {
         perror("outfile: seek: con_write");
         goto cleanup;
     }
