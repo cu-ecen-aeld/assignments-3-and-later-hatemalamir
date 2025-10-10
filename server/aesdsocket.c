@@ -192,24 +192,24 @@ void* write_to_disk(void *th_args) {
     pthread_mutex_lock(&(args->disk_q->lock));
     if(use_aesd_char_device && args->out_fctl->fd < 0) {
         args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
-        if (args->out_fctl->fd == -1) {
+        if (args->out_fctl->fd < 0) {
             perror("open: out_fctl: write_to_disk");
             goto cleanup;
         }
         syslog(LOG_INFO, "write_to_disk, opened %s", OUT_FILE);
     }
-    else {
-        if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
-            perror("outfile: seek: write_to_disk");
-            goto cleanup;
-        }
+    if(lseek(args->out_fctl->fd, 0, SEEK_END) < 0) {
+        perror("outfile: seek: write_to_disk");
+        goto cleanup;
     }
 
     int write_bytes, total_write_bytes=0;
     struct packet *next_packet;
     int last_out_idx = 0;
     int seek_cmd_found = 0;
+    syslog(LOG_DEBUG, "write_to_disk, now processing recv_buf");
     while(args->recv_buf->head != NULL) {
+        syslog(LOG_DEBUG, "write_to_disk, found %d bytes in recv_buf", args->recv_buf->head->len);
         for(int idx = 0; idx < args->recv_buf->head->len; idx++)
             if(args->recv_buf->head->chars[idx] == '\n') {
                 if(use_aesd_char_device && strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
@@ -231,7 +231,7 @@ void* write_to_disk(void *th_args) {
                 }
                 else {
                     write_bytes = write(args->out_fctl->fd, args->recv_buf->head->chars + last_out_idx, idx - last_out_idx + 1);
-                    if(write_bytes == -1) {
+                    if(write_bytes < 0) {
                         perror("outfile: write");
                         goto cleanup;
                     }
@@ -323,11 +323,11 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
-    if(!use_aesd_char_device)
-        if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
-            perror("outfile: seek: con_write");
-            goto cleanup;
-        }
+    // if(!use_aesd_char_device)
+    if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
+        perror("outfile: seek: con_write");
+        goto cleanup;
+    }
 
     int  read_bytes, sent_bytes, total_sent_bytes=0;
     while((read_bytes = read(args->out_fctl->fd, con_buf, CON_BUF_LEN)) != 0) {
