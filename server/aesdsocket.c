@@ -190,12 +190,13 @@ void* write_to_disk(void *th_args) {
     pthread_mutex_lock(&(args->out_fctl->lock));
     pthread_mutex_lock(&(args->recv_buf->lock));
     pthread_mutex_lock(&(args->disk_q->lock));
-    if(use_aesd_char_device) {
+    if(use_aesd_char_device && args->out_fctl->fd < 0) {
         args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
         if (args->out_fctl->fd == -1) {
             perror("open: out_fctl: write_to_disk");
             goto cleanup;
         }
+        syslog(LOG_INFO, "write_to_disk, opened %s", OUT_FILE);
     }
     else {
         if(lseek(args->out_fctl->fd, 0, SEEK_END) == -1) {
@@ -300,10 +301,6 @@ void* write_to_disk(void *th_args) {
         args->disk_q->head = next_elem;
     }
     args->disk_q->tail = NULL;
-/*
-    if(use_aesd_char_device)
-        close(args->out_fctl->fd);
-*/
 cleanup:
     if(args->recv_buf->head == NULL)
         args->recv_buf->tail = NULL;
@@ -326,13 +323,6 @@ void* con_write(void *th_args) {
         goto cleanup;
     }
     pthread_mutex_lock(&(args->out_fctl->lock));
-    /*
-    args->out_fctl->fd = open(OUT_FILE, O_RDWR | O_APPEND, 0644);
-    if (args->out_fctl->fd == -1) {
-        perror("open: out_fctl: con_write");
-        goto cleanup;
-    }
-    */
     if(!use_aesd_char_device)
         if(lseek(args->out_fctl->fd, 0, SEEK_SET) == -1) {
             perror("outfile: seek: con_write");
@@ -357,8 +347,12 @@ void* con_write(void *th_args) {
     }
     syslog(LOG_INFO, "sock fd: %d, total sent bytes: %d", args->con_fd, total_sent_bytes);
 
-    if(use_aesd_char_device)
+    /*
+    if(use_aesd_char_device) {
         close(args->out_fctl->fd);
+        syslog(LOG_INFO, "con_write, sock fd: %d, closed %s", args->con_fd, OUT_FILE);
+    }
+    */
 cleanup:
     pthread_mutex_unlock(&(args->out_fctl->lock));
     if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->con_fd, NULL))
@@ -574,7 +568,10 @@ int main(int argc, char* argv[]) {
         perror("pthread_mutex_init: out_fctl");
         exit(-1);
     }
-    if(!use_aesd_char_device) {
+
+    if(use_aesd_char_device)
+        out_fctl.fd = -1;
+    else {
         out_fctl.fd = open(OUT_FILE, O_RDWR | O_CREAT | O_APPEND, 0644);
         if (out_fctl.fd == -1) {
             perror("open: out_fctl");
@@ -885,14 +882,14 @@ shutdown:
         free(serv_events);
     free_pbuf(recv_buf.head);
 
-    if(!use_aesd_char_device) {
-        close(tfd);
-        if(out_fctl.fd) {
-            if(remove(OUT_FILE) == -1)
-                perror("outfile: remove");
-            syslog(LOG_INFO, "server: %s removed", OUT_FILE);
-        }
+    if(out_fctl.fd > 0) {
+        close(out_fctl.fd);
+        if(remove(OUT_FILE) == -1)
+            perror("outfile: remove");
+        syslog(LOG_INFO, "server: %s removed", OUT_FILE);
     }
+    if(!use_aesd_char_device)
+        close(tfd);
 
     if(exit_status == 0)
         syslog(LOG_INFO, "Server exited successfully.");
