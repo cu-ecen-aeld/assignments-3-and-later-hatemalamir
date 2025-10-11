@@ -226,14 +226,11 @@ loff_t seek_ctl(struct file *filp, const void __user *user_buff) {
         return -EINVAL;
     }
 
-    uint32_t seek_off = 0;
-    for(uint32_t idx = aesd_device.buff->out_offs; idx < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
-        if(idx == entry_idx) {
-            seek_off += seek_buff.write_cmd_offset;
-            break;
-        }
+    uint32_t seek_off = seek_buff.write_cmd_offset;
+    for(uint32_t idx = aesd_device.buff->out_offs; idx != entry_idx; idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
         seek_off += aesd_device.buff->entry[idx].size;
-    }
+
+    PDEBUG("seek_ctl: entry_idx: %lld, seek_off: %lld, SEEK_SET: %d", entry_idx, seek_buff.write_cmd, SEEK_SET);
     return aesd_llseek(filp, seek_off, SEEK_SET);
 }
 
