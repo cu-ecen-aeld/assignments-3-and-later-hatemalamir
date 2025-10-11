@@ -260,9 +260,9 @@ void* write_to_disk(void *th_args) {
         seek_args.write_cmd_offset = 0;
         if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
             perror("write_to_disk: ioctl: reset index");
-            syslog(LOG_ERR, "write_to_disk: ioctl failed while resetting index.");
             goto cleanup;
         }
+        syslog(LOG_DEBUG, "write_to_disk: offset was reset to 0 in preparation for con_write");
     }
 
     struct con_l_elem *next_elem;
@@ -276,13 +276,6 @@ void* write_to_disk(void *th_args) {
         }
         else {
             perror("malloc: con_hash: write_to_disk");
-            /*
-             * It might look a bit extreme to close the connection if a malloc
-             * error occured which is no fault of the connection itself and we
-             * could leave it in the queue and retry later. Although, I chose
-             * this because it's simpler, and if the server is actually
-             * struggling with memory that would relieve some of the stress.
-             */
             if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->disk_q->head->con_fd, NULL))
                 perror("epoll_ctl: del: write_to_disk");
             close(args->disk_q->head->con_fd);
@@ -324,7 +317,7 @@ void* con_write(void *th_args) {
     }
 
     int  read_bytes, sent_bytes, total_sent_bytes=0;
-    while((read_bytes = read(args->out_fctl->fd, con_buf, CON_BUF_LEN)) != 0) {
+    while((read_bytes = read(args->out_fctl->fd, con_buf, CON_BUF_LEN)) > 0) {
         syslog(LOG_INFO, "sock fd: %d, read %d bytes from %s", args->con_fd, read_bytes, OUT_FILE);
         if(read_bytes == -1) {
             if(errno == EINTR)

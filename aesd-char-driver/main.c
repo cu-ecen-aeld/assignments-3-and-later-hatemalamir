@@ -67,9 +67,12 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence) {
             return -EINVAL;
     }
 
-    if(newpos < 0 || newpos >= total_size)
+    if(newpos < 0 || newpos >= total_size) {
+        PDEBUG("aesd_llseek: failed to seek offset %lld. Out of range!", newpos);
         return -EINVAL;
+    }
     filp->f_pos = newpos;
+    PDEBUG("aesd_llseek: offset was set successfully to %lld.", newpos);
     return newpos;
 }
 
@@ -183,8 +186,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             last->next = wntry;
         }
     }
-
     PDEBUG("aesd_write: wrote %zu bytes at offset %lld", count, *f_pos);
+
     *f_pos += count;
     retval = count;
 clean:
@@ -194,9 +197,8 @@ out:
     return retval;
 }
 
-long seek_ctl(struct file *filp, const void __user *user_buff) {
+loff_t seek_ctl(struct file *filp, const void __user *user_buff) {
     struct aesd_seekto seek_buff;
-    memset(&seek_buff,0,sizeof(struct aesd_seekto));
     if(copy_from_user(&seek_buff, user_buff, sizeof(struct aesd_seekto))) {
         PDEBUG("aesd_ioctl: failed to copy aesd_seekto from user space.");
         return -EFAULT;
@@ -207,7 +209,7 @@ long seek_ctl(struct file *filp, const void __user *user_buff) {
         PDEBUG("seek_ctl: device buffer is empty.");
         return -EINVAL;
     }
-    if(seek_buff.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || (!aesd_device.buff->full && seek_buff.write_cmd > aesd_device.buff->out_offs)) {
+    if(seek_buff.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || (!aesd_device.buff->full && seek_buff.write_cmd >= aesd_device.buff->in_offs)) {
         PDEBUG("seek_ctl: out of range write_cmd %lld", seek_buff.write_cmd);
         return -EINVAL;
     }
@@ -225,9 +227,7 @@ long seek_ctl(struct file *filp, const void __user *user_buff) {
         }
         seek_off += aesd_device.buff->entry[idx].size;
     }
-    aesd_llseek(filp, seek_off, SEEK_SET);
-
-    return 0;
+    return aesd_llseek(filp, seek_off, SEEK_SET);
 }
 
 long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
