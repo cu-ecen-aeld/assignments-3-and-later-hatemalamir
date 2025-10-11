@@ -45,37 +45,6 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-loff_t aesd_llseek(struct file *filp, loff_t off, int whence) {
-    struct aesd_dev *dev = filp->private_data;
-    loff_t newpos;
-
-    size_t total_size = 0;
-    for(uint8_t offs = dev->buff->out_offs; offs != dev->buff->in_offs; offs = (offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
-        total_size += dev->buff->entry[offs].size;
-
-    switch(whence) {
-        case 0: /*SEEK_SET*/
-            newpos = off;
-            break;
-        case 1: /*SEEK_CUR*/
-            newpos = filp->f_pos + off;
-            break;
-        case 2: /*SEEK_END*/
-            newpos = total_size + off;
-            break;
-        default:
-            return -EINVAL;
-    }
-
-    if(newpos < 0 || newpos >= total_size) {
-        PDEBUG("aesd_llseek: failed to seek offset %lld. Out of range!", newpos);
-        return -EINVAL;
-    }
-    filp->f_pos = newpos;
-    PDEBUG("aesd_llseek: offset was set successfully to %lld.", newpos);
-    return newpos;
-}
-
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -195,6 +164,44 @@ clean:
 out:
     mutex_unlock(&dev->lock);
     return retval;
+}
+
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence) {
+    struct aesd_dev *dev = filp->private_data;
+    loff_t newpos;
+
+    size_t total_size = 0;
+    uint8_t entries = 0;
+    if(dev->buff->full)
+        entries = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    else
+        entries = dev->buff->in_offs;
+    for(uint8_t i = 0; i < entries; i++) {
+        uint8_t idx = (dev->buff->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        total_size += dev->buff->entry[idx].size;
+    }
+
+    switch(whence) {
+        case 0: /*SEEK_SET*/
+            newpos = off;
+            break;
+        case 1: /*SEEK_CUR*/
+            newpos = filp->f_pos + off;
+            break;
+        case 2: /*SEEK_END*/
+            newpos = total_size + off - 1;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    if(newpos < 0 || newpos >= total_size) {
+        PDEBUG("aesd_llseek: failed to seek offset %lld. Out of range!", newpos);
+        return -EINVAL;
+    }
+    filp->f_pos = newpos;
+    PDEBUG("aesd_llseek: offset was successfully set to %lld.", newpos);
+    return newpos;
 }
 
 loff_t seek_ctl(struct file *filp, const void __user *user_buff) {
