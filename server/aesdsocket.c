@@ -208,22 +208,22 @@ void* write_to_disk(void *th_args) {
         for(int idx = 0; idx < args->recv_buf->head->len; idx++)
             if(args->recv_buf->head->chars[idx] == '\n') {
                 if(use_aesd_char_device && strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
-                    syslog(LOG_DEBUG, "write_to_disk: AESDCHAR_IOCSEEKTO detected!");
                     uint32_t write_cmd, write_cmd_offset;
-                    if(sscanf(args->recv_buf->head->chars + last_out_idx + 19, "%u:%u", &write_cmd, &write_cmd_offset) == 2) {
+                    int res = sscanf(args->recv_buf->head->chars + last_out_idx + 19, "%u,%u", &write_cmd, &write_cmd_offset);
+                    if(res == 2) {
                         struct aesd_seekto seek_args;
                         seek_args.write_cmd = write_cmd;
                         seek_args.write_cmd_offset = write_cmd_offset;
                         if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
 
-                            syslog(LOG_ERR, "write_to_disk: AESDCHAR_IOCSEEKTO failed at write_cmd: %d, write_cmd_offset: %d", write_cmd, write_cmd_offset);
+                            syslog(LOG_ERR, "write_to_disk: failed to send command AESDCHAR_IOCSEEKTO");
                             goto cleanup;
                         }
                         syslog(LOG_DEBUG, "write_to_disk: AESDCHAR_IOCSEEKTO succeeded at write_cmd: %d, write_cmd_offset: %d", write_cmd, write_cmd_offset);
                         seek_cmd_found = 1;
                     }
                     else {
-                        perror("write_to_disk: sscanf");
+                        syslog(LOG_ERR, "write_to_disk: Failed to process AESDCHAR_IOCSEEKTO parameters. return: %d", res);
                         goto cleanup;
                     }
                 }
