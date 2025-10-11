@@ -208,6 +208,7 @@ void* write_to_disk(void *th_args) {
         for(int idx = 0; idx < args->recv_buf->head->len; idx++)
             if(args->recv_buf->head->chars[idx] == '\n') {
                 if(use_aesd_char_device && strncmp(args->recv_buf->head->chars + last_out_idx, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
+                    syslog(LOG_DEBUG, "write_to_disk: AESDCHAR_IOCSEEKTO detected!");
                     uint32_t write_cmd, write_cmd_offset;
                     if(sscanf(args->recv_buf->head->chars + last_out_idx + 19, "%u:%u", &write_cmd, &write_cmd_offset) == 2) {
                         struct aesd_seekto seek_args;
