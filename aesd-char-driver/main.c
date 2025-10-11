@@ -62,7 +62,9 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
     if(count > buf_entry->size)
         count = buf_entry->size;
-    if(copy_to_user(buf, buf_entry->buffptr, count)) {
+    else if(count < buf_entry->size)
+        count = buf_entry->size - count;
+    if(copy_to_user(buf, buf_entry->buffptr + byte_idx, count)) {
         PDEBUG("aesd_read: failed to copy to user space!");
         retval = -EFAULT;
         goto out;
