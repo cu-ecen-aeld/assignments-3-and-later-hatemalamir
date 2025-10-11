@@ -214,9 +214,11 @@ void* write_to_disk(void *th_args) {
                         seek_args.write_cmd = write_cmd;
                         seek_args.write_cmd_offset = write_cmd_offset;
                         if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
-                            perror("write_to_disk: ioctl");
+
+                            syslog(LOG_ERR, "write_to_disk: AESDCHAR_IOCSEEKTO failed at write_cmd: %d, write_cmd_offset: %d", write_cmd, write_cmd_offset);
                             goto cleanup;
                         }
+                        syslog(LOG_DEBUG, "write_to_disk: AESDCHAR_IOCSEEKTO succeeded at write_cmd: %d, write_cmd_offset: %d", write_cmd, write_cmd_offset);
                         seek_cmd_found = 1;
                     }
                     else {
