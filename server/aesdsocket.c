@@ -260,9 +260,10 @@ void* write_to_disk(void *th_args) {
         seek_args.write_cmd_offset = 0;
         if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
             perror("write_to_disk: ioctl: reset index");
+            syslog(LOG_ERR, "write_to_disk: failed to reset offset in preparation for con_write");
             goto cleanup;
         }
-        syslog(LOG_DEBUG, "write_to_disk: offset was reset to 0 in preparation for con_write");
+        syslog(LOG_DEBUG, "write_to_disk: offset was successfully set to 0 in preparation for con_write");
     }
 
     struct con_l_elem *next_elem;
