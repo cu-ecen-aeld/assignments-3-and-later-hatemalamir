@@ -11,24 +11,27 @@ endif
 
 EXTRA_CFLAGS += $(DEBFLAGS)
 
-ifneq ($(KERNELRELEASE),)
+# ifneq ($(KERNELRELEASE),)
 # call from kernel build system
 obj-m	:= aesdchar.o
 aesdchar-y := aesd-circular-buffer.o main.o
-else
+# else
+# KERNELDIR ?= /lib/modules/$(shell uname -r)/build  # buildroot
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build  # Yocto
 
-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-PWD       := $(shell pwd)
+PWD := $(shell pwd)
 
-modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+all:
+	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD)
 
 modules_install:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
-
-
+	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install
 endif
 
 clean:
-	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
+	rm -f *.o *~ core .depend .*.cmd *.ko *.mod.c
+	rm -f Module.markers Module.symvers modules.order
+	rm -rf .tmp_versions Modules.symvers
 
