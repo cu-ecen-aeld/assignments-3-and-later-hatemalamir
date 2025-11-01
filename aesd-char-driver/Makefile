@@ -16,19 +16,19 @@ EXTRA_CFLAGS += $(DEBFLAGS)
 obj-m	:= aesdchar.o
 aesdchar-y := aesd-circular-buffer.o main.o
 # else
-# KERNELDIR ?= /lib/modules/$(shell uname -r)/build  # buildroot
-KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build  # Yocto
+# KERNELDIR ?= /lib/modules/$(shell uname -r)/build	# buildroot
+#KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build	# Yocto
 
 PWD := $(shell pwd)
 
 all:
-	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD)
+	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules	# Buildroot
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD)	# Yocto
 
 modules_install:
-	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install
-endif
+	# $(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install	# Buildroot
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install	# Yocto
+#endif
 
 clean:
 	rm -f *.o *~ core .depend .*.cmd *.ko *.mod.c
