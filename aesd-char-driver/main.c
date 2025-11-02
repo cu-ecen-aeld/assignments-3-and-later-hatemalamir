@@ -217,12 +217,12 @@ loff_t seek_ctl(struct file *filp, const void __user *user_buff) {
         return -EINVAL;
     }
     if(seek_buff.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED || (!aesd_device.buff->full && seek_buff.write_cmd >= aesd_device.buff->in_offs)) {
-        PDEBUG("seek_ctl: out of range write_cmd %lld", seek_buff.write_cmd);
+        PDEBUG("seek_ctl: out of range write_cmd %u", seek_buff.write_cmd);
         return -EINVAL;
     }
     uint32_t entry_idx = aesd_device.buff->full ? (aesd_device.buff->out_offs + seek_buff.write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED : seek_buff.write_cmd;
     if(seek_buff.write_cmd_offset >= aesd_device.buff->entry[entry_idx].size) {
-        PDEBUG("seek_ctl: out of range write_cmd_offset %lld", seek_buff.write_cmd);
+        PDEBUG("seek_ctl: out of range write_cmd_offset %u", seek_buff.write_cmd);
         return -EINVAL;
     }
 
@@ -230,7 +230,7 @@ loff_t seek_ctl(struct file *filp, const void __user *user_buff) {
     for(uint32_t idx = aesd_device.buff->out_offs; idx != entry_idx; idx = (idx + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
         seek_off += aesd_device.buff->entry[idx].size;
 
-    PDEBUG("seek_ctl: out_offs: %d, write_cmd: %d, entry_idx: %lld, seek_off: %lld", aesd_device.buff->out_offs, seek_buff.write_cmd, entry_idx, seek_off);
+    PDEBUG("seek_ctl: out_offs: %d, write_cmd: %u, entry_idx: %u, seek_off: %lld", aesd_device.buff->out_offs, seek_buff.write_cmd, entry_idx, seek_off);
     return aesd_llseek(filp, seek_off, SEEK_SET);
 }
 
@@ -242,7 +242,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
 
     switch(cmd) {
         case AESDCHAR_IOCSEEKTO:
-            return seek_ctl(filp, arg);
+            return seek_ctl(filp, (const void *)arg);
         default:
             return -ENOTTY;
     }
