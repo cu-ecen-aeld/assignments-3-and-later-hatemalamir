@@ -42,7 +42,6 @@ USE_AESD_CHAR_DEVICE ?= 1
 ifeq ($(USE_AESD_CHAR_DEVICE),1)
   CFLAGS += -DUSE_AESD_CHAR_DEVICE
 endif
-$(info >>> CFLAGS = $(CFLAGS))
 
 LDFLAGS ?= -lpthread -lrt
 TARGET ?= aesdsocket
