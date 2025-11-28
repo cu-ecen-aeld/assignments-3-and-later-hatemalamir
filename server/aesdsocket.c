@@ -198,10 +198,9 @@ void* con_read(void *th_args) {
 	   */
 		for(idx = recv_bytes - 1; idx >= 0; idx--)
 			if(con_buf[idx] == '\n') {
-				if(strncmp(con_buf, "AESDCAM_VIDSTRM:", 15) == 0) {
+				if(strncmp(con_buf, "AESDCAM_IOCSTREAM:", 18) == 0) {
 					unsigned int frame_count;
-					int res = sscanf(con_buf + 15, "%u", &frame_count);
-					if(res == 1) {
+					if(1 == sscanf(con_buf + 18, "%u", &frame_count)) {
 						if(-1 == stream_video(args->con_fd, frame_count))
 							syslog(LOG_ERR, "sock fd: %d, video streaming error",
 								args->con_fd);
