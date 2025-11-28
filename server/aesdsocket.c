@@ -99,7 +99,7 @@ void free_pbuf(struct packet *pbuf_head) {
 static int stream_video(int con_fd, unsigned int frame_count) {
 	struct camera context;
 	context.dev_name     = CAMERA_DEFAULT_DEV;
-	context.io           = IO_METHOD_READ;
+	context.io           = IO_METHOD_MMAP;
 	context.force_format = 1;
 	context.width        = CAMERA_DEFAULT_WIDTH;
 	context.height       = CAMERA_DEFAULT_HEIGHT;
