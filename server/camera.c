@@ -31,32 +31,6 @@
 
 #define CAMERA_CLEAR(x) memset(&(x), 0, sizeof(x))
 
-enum io_method {
-	IO_METHOD_READ,
-	IO_METHOD_MMAP,
-	IO_METHOD_USERPTR,
-};
-
-struct buffer {
-	void   *start;
-	size_t  length;
-};
-
-struct camera {
-	char *dev_name;
-	int   fd;
-	enum io_method io;
-	void *user_ptr;
-	int force_format;
-	unsigned int width;
-	unsigned int height;
-	int format_yuv;
-	struct buffer *buffers;
-	unsigned int n_buffers;
-	unsigned int frame_count;
-	int print;
-};
-
 static void print_err(const char *s, struct camera *context, int pr_errno) {
 	if(pr_errno)
 		syslog(LOG_ERR, "%s error %d, %s, on device %s\n", s, errno, strerror(errno),
@@ -74,16 +48,7 @@ static int xioctl(int fh, int request, void *arg) {
 	return r;
 }
 
-static void process_image(const void *p, int size, struct camera *context) {
-	if (context->print)
-		fwrite(p, size, 1, stdout);
-
-	fflush(stderr);
-	fprintf(stderr, ".");
-	fflush(stdout);
-}
-
-static int read_frame(struct camera *context) {
+int read_frame(struct camera *context, void *out_buf) {
 	struct v4l2_buffer buf;
 	unsigned int i;
 
@@ -101,7 +66,7 @@ static int read_frame(struct camera *context) {
 				return -1;
 			}
 		}
-		process_image(context->buffers[0].start, context->buffers[0].length, context);
+		memcpy(out_buf, context->buffers[0].start, context->buffers[0].length);
 		break;
 
 	case IO_METHOD_MMAP:
@@ -129,7 +94,7 @@ static int read_frame(struct camera *context) {
 			free(msg);
 			return -1;
 		}
-		process_image(context->buffers[buf.index].start, buf.bytesused, context);
+		memcpy(out_buf, context->buffers[buf.index].start, buf.bytesused);
 
 		if (-1 == xioctl(context->fd, VIDIOC_QBUF, &buf)) {
 			print_err("VIDIOC_QBUF", context, 1);
@@ -161,7 +126,7 @@ static int read_frame(struct camera *context) {
 			print_err("No buffer found matching usrptr", context, 0);
 			return -1;
 		}
-		process_image((void *)buf.m.userptr, buf.bytesused, context);
+		memcpy(out_buf, (void *)buf.m.userptr, buf.bytesused);
 
 		if (-1 == xioctl(context->fd, VIDIOC_QBUF, &buf)) {
 			print_err("VIDIOC_QBUF", context, 1);
@@ -171,48 +136,6 @@ static int read_frame(struct camera *context) {
 	}
 
 	return 1;
-}
-
-static int mainloop(struct camera *context) {
-	unsigned int count;
-	count = context->frame_count;
-
-	while (count-- > 0) {
-		for (;;) {
-			fd_set fds;
-			FD_ZERO(&fds);
-			FD_SET(context->fd, &fds);
-
-			/* Timeout. */
-			struct timeval tv;
-			tv.tv_sec = 2;
-			tv.tv_usec = 0;
-
-			int r;
-			r = select(context->fd + 1, &fds, NULL, NULL, &tv);
-
-			if (-1 == r) {
-				if (EINTR == errno)
-					continue;
-				print_err("select", context, 1);
-				return -1;
-			}
-
-			if (0 == r) {
-				print_err("select timeout", context, 0);
-				return -1;
-			}
-
-			int rf;
-			rf = read_frame(context);
-			if(-1 == rf)
-				return -1;
-			else if (1 == rf)
-				break;
-			/* EAGAIN - continue select loop. */
-		}
-	}
-	return 0;
 }
 
 static int stop_capturing(struct camera *context) {
@@ -294,19 +217,26 @@ static void uninit_device(struct camera *context) {
 	unsigned int i;
 	switch (context->io) {
 	case IO_METHOD_MMAP:
-		for (i = 0; i < context->n_buffers; ++i)
+		for (i = 0; i < context->n_buffers; ++i) {
 			if (-1 == munmap(context->buffers[i].start, context->buffers[i].length))
 				print_err("munmap", context, 1);
+			context->buffers[i].start = NULL;
+			context->buffers[i].length = 0;
+		}
 		break;
 
 	case IO_METHOD_READ:
 	case IO_METHOD_USERPTR:
-		for (i = 0; i < context->n_buffers; ++i)
+		for (i = 0; i < context->n_buffers; ++i) {
 			free(context->buffers[i].start);
+			context->buffers[i].start = NULL;
+			context->buffers[i].length = 0;
+		}
 		break;
 	}
 
 	free(context->buffers);
+	context->buffers = NULL;
 }
 
 static int init_read(unsigned int buffer_size, struct camera *context)
@@ -499,7 +429,6 @@ static int init_device(struct camera *context) {
 			print_err("VIDIOC_S_FMT", context, 1);
 			return -1;
 		}
-
 		/* Note VIDIOC_S_FMT may change width and height. */
 	} else {
 		/* Preserve original settings as set by v4l2-ctl for example */
@@ -518,18 +447,24 @@ static int init_device(struct camera *context) {
 	if (fmt.fmt.pix.sizeimage < min)
 		fmt.fmt.pix.sizeimage = min;
 
+	context->img_size = fmt.fmt.pix.sizeimage;
+
+	int st;
 	switch (context->io) {
 	case IO_METHOD_READ:
-		return init_read(fmt.fmt.pix.sizeimage, context);
+		st = init_read(fmt.fmt.pix.sizeimage, context);
 
 	case IO_METHOD_MMAP:
-		return init_mmap(context);
+		st = init_mmap(context);
 
 	case IO_METHOD_USERPTR:
-		return init_userp(fmt.fmt.pix.sizeimage, context);
+		st = init_userp(fmt.fmt.pix.sizeimage, context);
 	}
 
-	return -1;
+	if(st == -1)
+		return st;
+
+	return 0;
 }
 
 static void close_device(struct camera *context) {
@@ -565,53 +500,19 @@ static int open_device(struct camera *context) {
 	return 0;
 }
 
-int capture_video(
-	char *dev_name,
-	int use_read_calls,
-	int use_memory_map,
-	void *user_ptr,
-	int force_format,
-	unsigned int width,
-	unsigned int height,
-	int format_yuv,
-	unsigned int frame_count,
-	int print
-) {
-	openlog(NULL, 0, LOG_USER);
-
-	struct camera context;
-	context.dev_name     = dev_name;
-	if(use_read_calls)
-		context.io         = IO_METHOD_READ;
-	else if(use_memory_map)
-		context.io         = IO_METHOD_MMAP;
-	else {
-		context.io         = IO_METHOD_USERPTR;
-		context.user_ptr   = user_ptr;
-	}
-	context.force_format = force_format;
-	context.width        = width;
-	context.height       = height;
-	context.format_yuv   = format_yuv;
-	context.buffers      = NULL;
-	context.n_buffers    = 0;
-	context.frame_count  = frame_count;
-	context.print        = print;
-
-	int st;
-	if(-1 == (st = open_device(&context)))
+int init_camera(struct camera *context) {
+	if(-1 == open_device(context))
 		return -1;
-	if(-1 == (st = init_device(&context)))
-		goto cleanup;
-	if(-1 == (st = start_capturing(&context)))
-		goto cleanup;
-	if(-1 == (st = mainloop(&context)))
-		goto cleanup;
-	if(-1 == (st = stop_capturing(&context)))
-		goto cleanup;
-cleanup:
-	uninit_device(&context);
-	close_device(&context);
-	closelog();
-	return st;
+	if(-1 == init_device(context))
+		return -1;
+	if(-1 == start_capturing(context))
+		return -1;
+
+	return 0;
+}
+
+void uninit_camera(struct camera *context) {
+	stop_capturing(context);
+	uninit_device(context);
+	close_device(context);
 }

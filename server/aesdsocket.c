@@ -34,8 +34,9 @@
 #include <sys/timerfd.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
-#include "uthash.h"
 #include "aesdsocket.h"
+#include "camera.h"
+#include "uthash.h"
 #include "../aesd-char-driver/aesd_ioctl.h"
 
 static volatile sig_atomic_t terminate = 0;
@@ -95,6 +96,89 @@ void free_pbuf(struct packet *pbuf_head) {
 	}
 }
 
+static int stream_video(int con_fd, unsigned int frame_count) {
+	struct camera context;
+	context.dev_name     = CAMERA_DEFAULT_DEV;
+	context.io           = IO_METHOD_READ;
+	context.force_format = 1;
+	context.width        = CAMERA_DEFAULT_WIDTH;
+	context.height       = CAMERA_DEFAULT_HEIGHT;
+	context.format_yuv   = 0;
+
+	int st = 0;
+
+	if(-1 == init_camera(&context)) {
+		st = -1;
+		goto cleanup;
+	}
+
+	void *frame_buf = malloc(context.img_size);
+	if (!frame_buf) {
+		syslog(LOG_ERR, "sock fd: %d failed to allocate frame_buf.", con_fd);
+		st = -1;
+		goto cleanup;
+	}
+
+	int sent_bytes, total_sent_bytes = 0;
+	unsigned int count = frame_count;
+	while (count-- > 0) {
+		for (;;) {
+			fd_set fds;
+			FD_ZERO(&fds);
+			FD_SET(context.fd, &fds);
+
+			/* Timeout. */
+			struct timeval tv;
+			tv.tv_sec = 2;
+			tv.tv_usec = 0;
+
+			int r;
+			r = select(context.fd + 1, &fds, NULL, NULL, &tv);
+
+			if (-1 == r) {
+				if (EINTR == errno)
+					continue;
+				syslog(LOG_ERR, "sock fd %d failed to capture video. %s", con_fd,
+					strerror(errno));
+				st = -1;
+				goto cleanup;
+			}
+
+			if (0 == r) {
+				syslog(LOG_ERR, "sock fd %d failed to capture video. select timeout",
+					con_fd);
+				st = -1;
+				goto cleanup;
+			}
+
+			int rf;
+			rf = read_frame(&context, frame_buf);
+			if(-1 == rf) {
+				st = -1;
+				goto cleanup;
+			}
+			else if (1 == rf)
+				break;
+			/* EAGAIN - continue select loop. */
+		}
+		if((sent_bytes = send(con_fd, frame_buf, context.img_size, 0)) == -1) {
+			syslog(LOG_ERR, "sock fd %d failed to send frame. %s", con_fd,
+					strerror(errno));
+			st = -1;
+			break;
+		}
+		total_sent_bytes += sent_bytes;
+	}
+	syslog(LOG_INFO, "sock fd: %d, sent %d frames, %d bytes", con_fd,
+		frame_count - count, total_sent_bytes);
+cleanup:
+	uninit_camera(&context);
+	if(frame_buf)
+		free(frame_buf);
+
+	return st;
+}
+
 void* con_read(void *th_args) {
 	syslog(LOG_INFO, "con_read started.");
 	struct con_read_args *args = (struct con_read_args *)th_args;
@@ -109,11 +193,34 @@ void* con_read(void *th_args) {
 		syslog(LOG_INFO, "sock fd: %d, received %d bytes.", args->con_fd, recv_bytes);
 		total_recv_bytes += recv_bytes;
 		/*
-		 * Packet ends with '\n'. If found, write to recv_buf.
-		 * Start from the end to handle the unlikely case of multipl packets in the same connection.
+		 * Packet ends with '\n'. If found, write to recv_buf. Start from the end to
+		 * handle the unlikely case of multipl packets in the same connection.
 	   */
 		for(idx = recv_bytes - 1; idx >= 0; idx--)
 			if(con_buf[idx] == '\n') {
+				if(strncmp(con_buf, "AESDCAM_VIDSTRM:", 15) == 0) {
+					unsigned int frame_count;
+					int res = sscanf(con_buf + 15, "%u", &frame_count);
+					if(res == 1) {
+						if(-1 == stream_video(args->con_fd, frame_count))
+							syslog(LOG_ERR, "sock fd: %d, video streaming error",
+								args->con_fd);
+						else
+							syslog(LOG_INFO, "sock fd: %d, video streaming completed",
+								args->con_fd);
+					} else
+						syslog(LOG_ERR, "sock fd: %d, invalid frame count", args->con_fd);
+					
+					if(epoll_ctl(args->epfd, EPOLL_CTL_DEL, args->con_fd, NULL))
+						perror("epoll_ctl: del");
+					close(args->con_fd);
+					pthread_mutex_lock(&(args->con_ctr->lock));
+					args->con_ctr->num_con--;
+					pthread_mutex_unlock(&(args->con_ctr->lock));
+					syslog(LOG_INFO, "sock fd: %d, connection closed. Active connections: %d", args->con_fd, args->con_ctr->num_con);
+					goto cleanup;
+				}
+
 				if(append_to_pbuf(con_buf, idx + 1, &pbuf_head, &pbuf_tail) != 0)
 					goto cleanup;
 				recv_packet_len += (idx + 1);
@@ -215,7 +322,6 @@ void* write_to_disk(void *th_args) {
 						seek_args.write_cmd = write_cmd;
 						seek_args.write_cmd_offset = write_cmd_offset;
 						if(ioctl(args->out_fctl->fd, AESDCHAR_IOCSEEKTO, &seek_args) < 0) {
-
 							syslog(LOG_ERR, "write_to_disk: failed to send command AESDCHAR_IOCSEEKTO");
 							goto cleanup;
 						}
@@ -238,8 +344,8 @@ void* write_to_disk(void *th_args) {
 				}
 				last_out_idx = idx + 1;
 			}
-		/* This means incomplete packets, becaues we're missing the '\n' at end.
-		 * We're not handling incomplete packets. Maybe at some point.
+		/* Incomplete packets, missing '\n' at the end.
+		 * Not handled! Maybe later.
 		 * */
 		if(last_out_idx < args->recv_buf->head->len) {
 			write_bytes = write(args->out_fctl->fd, args->recv_buf->head->chars + last_out_idx, args->recv_buf->head->len - last_out_idx);
