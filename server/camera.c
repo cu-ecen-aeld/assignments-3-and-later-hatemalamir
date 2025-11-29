@@ -135,6 +135,7 @@ int read_frame(struct camera *context, void *out_buf) {
 		break;
 	}
 
+	syslog(LOG_DEBUG, "Read 1 frame from %s", context->dev_name);
 	return 1;
 }
 
@@ -154,6 +155,8 @@ static int stop_capturing(struct camera *context) {
 		}
 		break;
 	}
+
+	syslog(LOG_DEBUG, "Stopped capturing frames from %s", context->dev_name);
 	return 0;
 }
 
@@ -207,6 +210,8 @@ static int start_capturing(struct camera *context) {
 		}
 		break;
 	}
+
+	syslog(LOG_DEBUG, "Started capturing frames from %s", context->dev_name);
 	return 0;
 }
 
@@ -237,6 +242,8 @@ static void uninit_device(struct camera *context) {
 
 	free(context->buffers);
 	context->buffers = NULL;
+
+	syslog(LOG_DEBUG, "Uninitialized device %s", context->dev_name);
 }
 
 static int init_read(unsigned int buffer_size, struct camera *context)
@@ -257,6 +264,7 @@ static int init_read(unsigned int buffer_size, struct camera *context)
 	}
 	context->n_buffers = 1;
 
+	syslog(LOG_DEBUG, "Initiated read system calls on device %s", context->dev_name);
 	return 0;
 }
 
@@ -315,6 +323,7 @@ static int init_mmap(struct camera *context) {
 		}
 	}
  
+	syslog(LOG_DEBUG, "Initialized mmap on device %s", context->dev_name);
 	return 0;
 }
 
@@ -352,6 +361,7 @@ static int init_userp(unsigned int buffer_size, struct camera *context) {
 		}
 	}
 
+	syslog(LOG_DEBUG, "Initialized userp on device %s", context->dev_name);
 	return 0;
 }
 
@@ -464,6 +474,7 @@ static int init_device(struct camera *context) {
 	if(st == -1)
 		return st;
 
+	syslog(LOG_DEBUG, "Initialized device %s", context->dev_name);
 	return 0;
 }
 
@@ -475,6 +486,8 @@ static void close_device(struct camera *context) {
 		print_err("close", context, 1);
 
 	context->fd = -1;
+
+	syslog(LOG_DEBUG, "Closed device %s", context->dev_name);
 }
 
 static int open_device(struct camera *context) {
@@ -497,6 +510,7 @@ static int open_device(struct camera *context) {
 	}
 	context->fd = fd;
 
+	syslog(LOG_DEBUG, "Opened device %s", context->dev_name);
 	return 0;
 }
 
@@ -508,6 +522,7 @@ int init_camera(struct camera *context) {
 	if(-1 == start_capturing(context))
 		return -1;
 
+	syslog(LOG_DEBUG, "Initialized camera device %s", context->dev_name);
 	return 0;
 }
 
@@ -515,4 +530,6 @@ void uninit_camera(struct camera *context) {
 	stop_capturing(context);
 	uninit_device(context);
 	close_device(context);
+
+	syslog(LOG_DEBUG, "Uninitialized camera device %s", context->dev_name);
 }
