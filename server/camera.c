@@ -211,7 +211,7 @@ static int start_capturing(struct camera *context) {
 		break;
 	}
 
-	syslog(LOG_DEBUG, "Started capturing frames from %s", context->dev_name);
+	syslog(LOG_DEBUG, "Started capturing from %s", context->dev_name);
 	return 0;
 }
 
@@ -246,8 +246,7 @@ static void uninit_device(struct camera *context) {
 	syslog(LOG_DEBUG, "Uninitialized device %s", context->dev_name);
 }
 
-static int init_read(unsigned int buffer_size, struct camera *context)
-{
+static int init_read(unsigned int buffer_size, struct camera *context) {
 	context->buffers = calloc(1, sizeof(*context->buffers));
 
 	if (!context->buffers) {
@@ -456,19 +455,21 @@ static int init_device(struct camera *context) {
 	min = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height;
 	if (fmt.fmt.pix.sizeimage < min)
 		fmt.fmt.pix.sizeimage = min;
-
 	context->img_size = fmt.fmt.pix.sizeimage;
 
 	int st;
 	switch (context->io) {
 	case IO_METHOD_READ:
 		st = init_read(fmt.fmt.pix.sizeimage, context);
+		break;
 
 	case IO_METHOD_MMAP:
 		st = init_mmap(context);
+		break;
 
 	case IO_METHOD_USERPTR:
 		st = init_userp(fmt.fmt.pix.sizeimage, context);
+		break;
 	}
 
 	if(st == -1)
